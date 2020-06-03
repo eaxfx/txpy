@@ -10,24 +10,33 @@ from PIL import Image
 
 from multiprocessing.dummy import Pool
 
-THREADS = 8
+THREADS   = 12
+CHUNKSIZE = 4
+
+def getcol(c):
+    with Image.open(args.i+c[1]) as oim:
+        col = oim.crop((c[0], 0, c[0]+1, height))
+    return col
+    
 
 def buildframe(i):
-    print('...frame', f'{i+1:04}', 'of', width)
+    print('...frame', f'{i+1:04} of', width, end='\r')
     with Image.new('RGBA', (len(oldframes), height)) as nim:
-        
         # Iteratively take columns from each input frame
-        for j, oldframe in enumerate(oldframes):
-            with Image.open(args.i+oldframe) as oim:
-                col = oim.crop((i, 0, i+1, height))
-                
-            nim.paste(col, (j,0,j+1,height))
+        cols = [(i,frame) for frame in oldframes]
         
+        with Pool(THREADS) as pool:
+            coldata = pool.map(getcol, cols, CHUNKSIZE)
+        
+        for j, x in enumerate(coldata):
+            nim.paste(x, (j,0,j+1,height))
+            
         nim.save(args.o+f'{i:04}.png')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-i', help='input directory', required=True)
-parser.add_argument('-o', help='output name', required=True)
+parser.add_argument('-o', help='output directory', required=True)
+parser.add_argument('-s', help='skip n frames', type=int, default=0)
 
 args = parser.parse_args()
 
@@ -45,15 +54,12 @@ if oldframes == []:
 
 os.makedirs(args.o, exist_ok=True)
 
-pool = Pool(THREADS)
-
 with Image.open(args.i+oldframes[0]) as f:
     width  = f.width 
     height = f.height
 
 print('Processing')
-pool.map(buildframe, range(width))
-pool.close()
-pool.join()
+for i in range(args.s, width):
+    buildframe(i)
 
     
